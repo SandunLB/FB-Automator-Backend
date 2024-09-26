@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -7,9 +6,14 @@ const jwt = require('jsonwebtoken');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
-const port = 3000;
 
-app.use(cors());
+// Updated CORS configuration
+const corsOptions = {
+  origin: ['http://localhost:3001', process.env.FRONTEND_URL],
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 // Connect to MongoDB
@@ -79,7 +83,6 @@ const checkSubscription = async (req, res, next) => {
       await user.save();
     }
 
-    // Instead of blocking access, we'll attach the subscription status to the request
     req.subscriptionStatus = user.subscriptionStatus;
     next();
   } catch (error) {
@@ -99,7 +102,7 @@ app.post('/register', async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const trialEndDate = new Date(Date.now() + 60 * 60 * 1000 * 24); // 24 hour from now
+    const trialEndDate = new Date(Date.now() + 60 * 60 * 1000 * 24); // 24 hours from now
     const newUser = new User({
       username,
       email,
@@ -109,7 +112,7 @@ app.post('/register', async (req, res) => {
     });
     await newUser.save();
 
-    res.status(201).json({ message: 'User registered successfully with 1-hour free trial' });
+    res.status(201).json({ message: 'User registered successfully with 24-hour free trial' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to register user' });
   }
@@ -342,6 +345,5 @@ app.get('/success', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+// Export the Express API
+module.exports = app;
