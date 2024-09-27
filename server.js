@@ -9,7 +9,7 @@ const app = express();
 
 // Updated CORS configuration
 const corsOptions = {
-  origin: ['http://localhost:3001', process.env.FRONTEND_URL],
+  origin: ['http://localhost:3001', process.env.FRONTEND_URL, 'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh'],
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
