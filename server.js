@@ -90,6 +90,11 @@ const checkSubscription = async (req, res, next) => {
   }
 };
 
+
+app.get('/test', (req, res) => {
+  res.json({ message: 'Test route is working!' });
+});
+
 // User registration
 app.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
