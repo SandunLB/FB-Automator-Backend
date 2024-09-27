@@ -9,7 +9,13 @@ const app = express();
 
 // Updated CORS configuration
 const corsOptions = {
-  origin: ['http://localhost:3001', process.env.FRONTEND_URL, 'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh', 'https://ikman.lk'],
+  origin: [
+    'http://localhost:3001',
+    process.env.FRONTEND_URL,
+    'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh',
+    'https://ikman.lk',
+    'https://test-front-end-dfec6.web.app' // Add your frontend URL here
+  ],
   optionsSuccessStatus: 200,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
