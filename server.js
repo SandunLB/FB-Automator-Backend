@@ -95,6 +95,34 @@ app.get('/test', (req, res) => {
   res.json({ message: 'Test route is working!' });
 });
 
+app.get('/test-db', async (req, res) => {
+  try {
+    const count = await User.countDocuments();
+    res.json({ message: 'Database connection successful', userCount: count });
+  } catch (error) {
+    res.status(500).json({ error: 'Database connection failed', details: error.message });
+  }
+});
+
+app.get('/test-jwt', (req, res) => {
+  try {
+    const token = jwt.sign({ test: 'data' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.json({ message: 'JWT creation successful', token });
+  } catch (error) {
+    res.status(500).json({ error: 'JWT creation failed', details: error.message });
+  }
+});
+
+app.get('/test-stripe', async (req, res) => {
+  try {
+    const paymentIntents = await stripe.paymentIntents.list({ limit: 1 });
+    res.json({ message: 'Stripe connection successful', paymentIntentCount: paymentIntents.data.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Stripe connection failed', details: error.message });
+  }
+});
+
+
 // User registration
 app.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
