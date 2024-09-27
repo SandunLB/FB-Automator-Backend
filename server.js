@@ -9,9 +9,13 @@ const app = express();
 
 // Updated CORS configuration
 const corsOptions = {
-  origin: ['http://localhost:3001', process.env.FRONTEND_URL, 'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh'],
-  optionsSuccessStatus: 200
+  origin: ['http://localhost:3001', process.env.FRONTEND_URL, 'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh', 'https://ikman.lk'],
+  optionsSuccessStatus: 200,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
+
 app.use(cors(corsOptions));
 
 app.use(express.json());
