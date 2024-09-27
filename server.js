@@ -14,7 +14,7 @@ const corsOptions = {
     process.env.FRONTEND_URL,
     'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh',
     'https://ikman.lk',
-    'https://test-front-end-dfec6.web.app' // Add your frontend URL here
+    'https://test-front-end-dfec6.web.app' 
   ],
   optionsSuccessStatus: 200,
   credentials: true,
@@ -381,10 +381,10 @@ app.get('/success', async (req, res) => {
       await user.save();
     }
 
-    res.redirect(`${process.env.FRONTEND_URL}/subscription-success`);
+    res.redirect(`https://test-front-end-dfec6.web.app/subscription-success`);
   } catch (error) {
     console.error('Error handling successful checkout:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/subscription-error`);
+    res.redirect(`https://test-front-end-dfec6.web.app/subscription-error`);
   }
 });
 
