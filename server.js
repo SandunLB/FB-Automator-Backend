@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -7,27 +8,34 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 
-// Updated CORS configuration
-const corsOptions = {
-  origin: [
-    'http://localhost:3001',
-    process.env.FRONTEND_URL,
-    'chrome-extension://caadlncmmfcghiiehgcnkpjnlgafkjgh',
-    'https://ikman.lk',
-    'https://test-front-end-dfec6.web.app' 
-  ],
-  optionsSuccessStatus: 200,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
+// CORS configuration
+app.use(cors());
 
-app.use(cors(corsOptions));
+// Use JSON parsing middleware for all routes except the webhook route
+app.use((req, res, next) => {
+  if (req.path === '/api/stripe-webhook') {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
 
-app.use(express.json());
+// Use raw body parsing for the Stripe webhook route
+app.use('/api/stripe-webhook', express.raw({type: 'application/json'}));
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+// MongoDB connection
+let cachedDb = null;
+async function connectToDatabase() {
+  if (cachedDb) {
+    return cachedDb;
+  }
+  const db = await mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  });
+  cachedDb = db;
+  return db;
+}
 
 // Define schemas
 const userSchema = new mongoose.Schema({
@@ -37,6 +45,7 @@ const userSchema = new mongoose.Schema({
   stripeCustomerId: { type: String, default: 'Not subscribed' },
   subscriptionId: { type: String, default: 'Not subscribed' },
   subscriptionStatus: { type: String, default: 'trial' },
+  cancelAtPeriodEnd: { type: Boolean, default: false },
   trialEndDate: { type: Date, required: true }
 });
 
@@ -100,41 +109,9 @@ const checkSubscription = async (req, res, next) => {
   }
 };
 
-
-app.get('/test', (req, res) => {
-  res.json({ message: 'Test route is working!' });
-});
-
-app.get('/test-db', async (req, res) => {
-  try {
-    const count = await User.countDocuments();
-    res.json({ message: 'Database connection successful', userCount: count });
-  } catch (error) {
-    res.status(500).json({ error: 'Database connection failed', details: error.message });
-  }
-});
-
-app.get('/test-jwt', (req, res) => {
-  try {
-    const token = jwt.sign({ test: 'data' }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    res.json({ message: 'JWT creation successful', token });
-  } catch (error) {
-    res.status(500).json({ error: 'JWT creation failed', details: error.message });
-  }
-});
-
-app.get('/test-stripe', async (req, res) => {
-  try {
-    const paymentIntents = await stripe.paymentIntents.list({ limit: 1 });
-    res.json({ message: 'Stripe connection successful', paymentIntentCount: paymentIntents.data.length });
-  } catch (error) {
-    res.status(500).json({ error: 'Stripe connection failed', details: error.message });
-  }
-});
-
-
 // User registration
-app.post('/register', async (req, res) => {
+app.post('/api/register', async (req, res) => {
+  await connectToDatabase();
   const { username, email, password } = req.body;
 
   try {
@@ -145,7 +122,7 @@ app.post('/register', async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const trialEndDate = new Date(Date.now() + 60 * 60 * 1000 * 24); // 24 hours from now
+    const trialEndDate = new Date(Date.now() + 60 * 60 * 1000 * 24); // 24 hour from now
     const newUser = new User({
       username,
       email,
@@ -155,14 +132,15 @@ app.post('/register', async (req, res) => {
     });
     await newUser.save();
 
-    res.status(201).json({ message: 'User registered successfully with 24-hour free trial' });
+    res.status(201).json({ message: 'User registered successfully with 1-hour free trial' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to register user' });
   }
 });
 
 // User login
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
+  await connectToDatabase();
   const { identifier, password } = req.body;
 
   try {
@@ -186,7 +164,8 @@ app.post('/login', async (req, res) => {
 });
 
 // Token refresh
-app.post('/refresh-token', async (req, res) => {
+app.post('/api/refresh-token', async (req, res) => {
+  await connectToDatabase();
   const { refreshToken } = req.body;
 
   if (!refreshToken) {
@@ -203,7 +182,8 @@ app.post('/refresh-token', async (req, res) => {
 });
 
 // Protected route to get cars
-app.get('/cars', verifyToken, checkSubscription, async (req, res) => {
+app.get('/api/cars', verifyToken, checkSubscription, async (req, res) => {
+  await connectToDatabase();
   try {
     const cars = await Car.find({ userId: req.userId });
     res.json({ cars, subscriptionStatus: req.subscriptionStatus });
@@ -214,7 +194,8 @@ app.get('/cars', verifyToken, checkSubscription, async (req, res) => {
 });
 
 // Protected route to add a car
-app.post('/cars', verifyToken, checkSubscription, async (req, res) => {
+app.post('/api/cars', verifyToken, checkSubscription, async (req, res) => {
+  await connectToDatabase();
   const carData = { ...req.body, userId: req.userId };
   
   try {
@@ -228,7 +209,8 @@ app.post('/cars', verifyToken, checkSubscription, async (req, res) => {
 });
 
 // Protected route to delete a single car
-app.delete('/cars/:id', verifyToken, checkSubscription, async (req, res) => {
+app.delete('/api/cars/:id', verifyToken, checkSubscription, async (req, res) => {
+  await connectToDatabase();
   try {
     const car = await Car.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (!car) {
@@ -242,7 +224,8 @@ app.delete('/cars/:id', verifyToken, checkSubscription, async (req, res) => {
 });
 
 // Protected route to delete multiple cars
-app.post('/cars/delete-multiple', verifyToken, checkSubscription, async (req, res) => {
+app.post('/api/cars/delete-multiple', verifyToken, checkSubscription, async (req, res) => {
+  await connectToDatabase();
   const { carIds } = req.body;
 
   if (!Array.isArray(carIds) || carIds.length === 0) {
@@ -267,7 +250,8 @@ app.post('/cars/delete-multiple', verifyToken, checkSubscription, async (req, re
 });
 
 // Protected route to update a car's description
-app.patch('/cars/:id', verifyToken, checkSubscription, async (req, res) => {
+app.patch('/api/cars/:id', verifyToken, checkSubscription, async (req, res) => {
+  await connectToDatabase();
   const { id } = req.params;
   const { description } = req.body;
 
@@ -289,8 +273,81 @@ app.patch('/cars/:id', verifyToken, checkSubscription, async (req, res) => {
   }
 });
 
+// Protected route to get user profile
+app.get('/api/profile', verifyToken, async (req, res) => {
+  await connectToDatabase();
+  try {
+    const user = await User.findById(req.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
+
+// Protected route to update username
+app.patch('/api/update-username', verifyToken, async (req, res) => {
+  await connectToDatabase();
+  const { newUsername } = req.body;
+
+  try {
+    const existingUser = await User.findOne({ username: newUsername });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { username: newUsername },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ message: 'Username updated successfully', user });
+  } catch (error) {
+    console.error('Error updating username:', error);
+    res.status(500).json({ error: 'Failed to update username' });
+  }
+});
+
+// Protected route to update password
+app.patch('/api/update-password', verifyToken, async (req, res) => {
+  await connectToDatabase();
+  const { currentPassword, newPassword } = req.body;
+
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedNewPassword = await bcrypt.hash(newPassword, salt);
+
+    user.password = hashedNewPassword;
+    await user.save();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
 // Create Stripe checkout session
-app.post('/create-checkout-session', verifyToken, async (req, res) => {
+app.post('/api/create-checkout-session', verifyToken, async (req, res) => {
+  await connectToDatabase();
   try {
     const user = await User.findById(req.userId);
     if (!user) {
@@ -306,9 +363,14 @@ app.post('/create-checkout-session', verifyToken, async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${process.env.BASE_URL}/api/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.BASE_URL}/cancel`,
       client_reference_id: user._id.toString(),
+      subscription_data: {
+        metadata: {
+          userId: user._id.toString(),
+        },
+      },
     });
 
     res.json({ url: session.url });
@@ -319,7 +381,8 @@ app.post('/create-checkout-session', verifyToken, async (req, res) => {
 });
 
 // Get subscription status
-app.get('/subscription-status', verifyToken, async (req, res) => {
+app.get('/api/subscription-status', verifyToken, async (req, res) => {
+  await connectToDatabase();
   try {
     const user = await User.findById(req.userId);
     if (!user) {
@@ -334,6 +397,7 @@ app.get('/subscription-status', verifyToken, async (req, res) => {
 
     res.json({
       subscriptionStatus: user.subscriptionStatus,
+      cancelAtPeriodEnd: user.cancelAtPeriodEnd,
       trialEndDate: user.trialEndDate,
       stripeCustomerId: user.stripeCustomerId,
       subscriptionId: user.subscriptionId
@@ -344,30 +408,94 @@ app.get('/subscription-status', verifyToken, async (req, res) => {
   }
 });
 
-// Cancel subscription
-app.post('/cancel-subscription', verifyToken, async (req, res) => {
+// Create Stripe Customer Portal session
+app.post('/api/create-customer-portal-session', verifyToken, async (req, res) => {
+  await connectToDatabase();
   try {
     const user = await User.findById(req.userId);
-    if (!user || user.subscriptionId === 'Not subscribed') {
-      return res.status(404).json({ error: 'User or subscription not found' });
+    if (!user || !user.stripeCustomerId) {
+      return res.status(404).json({ error: 'User or Stripe customer not found' });
     }
 
-    const subscription = await stripe.subscriptions.update(user.subscriptionId, {
-      cancel_at_period_end: true
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripeCustomerId,
+      return_url: `${process.env.FRONTEND_URL}/account`,
     });
 
-    user.subscriptionStatus = 'canceling';
-    await user.save();
-
-    res.json({ message: 'Subscription will be canceled at the end of the billing period' });
+    res.json({ url: session.url });
   } catch (error) {
-    console.error('Error canceling subscription:', error);
-    res.status(500).json({ error: 'Failed to cancel subscription' });
+    console.error('Error creating customer portal session:', error);
+    res.status(500).json({ error: 'Failed to create customer portal session' });
   }
 });
 
+// Handle Stripe webhook
+app.post('/api/stripe-webhook', async (req, res) => {
+  await connectToDatabase();
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Webhook Error:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated':
+    case 'customer.subscription.deleted':
+    case 'invoice.payment_succeeded':
+    case 'invoice.payment_failed':
+      const subscription = event.data.object;
+      await handleSubscriptionChange(subscription);
+      break;
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({received: true});
+});
+
+// Handle subscription changes
+async function handleSubscriptionChange(subscription) {
+  const userId = subscription.metadata.userId;
+  const user = await User.findById(userId);
+
+  if (!user) {
+    console.error(`User not found for subscription ${subscription.id}`);
+    return;
+  }
+
+  user.subscriptionId = subscription.id;
+  user.stripeCustomerId = subscription.customer;
+  user.cancelAtPeriodEnd = subscription.cancel_at_period_end;
+
+  switch (subscription.status) {
+    case 'active':
+      user.subscriptionStatus = subscription.cancel_at_period_end ? 'active_canceling' : 'active';
+      break;
+    case 'past_due':
+      user.subscriptionStatus = 'past_due';
+      break;
+    case 'unpaid':
+      user.subscriptionStatus = 'unpaid';
+      break;
+    case 'canceled':
+      user.subscriptionStatus = 'canceled';
+      break;
+    default:
+      user.subscriptionStatus = subscription.status;
+  }
+
+  await user.save();
+}
+
 // Handle successful checkout
-app.get('/success', async (req, res) => {
+app.get('/api/success', async (req, res) => {
+  await connectToDatabase();
   const { session_id } = req.query;
 
   try {
@@ -378,13 +506,14 @@ app.get('/success', async (req, res) => {
       user.stripeCustomerId = session.customer;
       user.subscriptionId = session.subscription;
       user.subscriptionStatus = 'active';
+      user.cancelAtPeriodEnd = false;
       await user.save();
     }
 
-    res.redirect(`https://test-front-end-dfec6.web.app/subscription-success`);
+    res.redirect(`${process.env.FRONTEND_URL}/subscription-success`);
   } catch (error) {
     console.error('Error handling successful checkout:', error);
-    res.redirect(`https://test-front-end-dfec6.web.app/subscription-error`);
+    res.redirect(`${process.env.FRONTEND_URL}/subscription-error`);
   }
 });
 
