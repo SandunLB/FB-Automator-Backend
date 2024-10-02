@@ -154,8 +154,8 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid password' });
     }
 
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '15m' });
-    const refreshToken = jwt.sign({ id: user._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '3m' });
+    const refreshToken = jwt.sign({ id: user._id }, JWT_REFRESH_SECRET, { expiresIn: '3m' });
 
     res.json({ token, refreshToken, username: user.username });
   } catch (error) {
@@ -174,7 +174,7 @@ app.post('/api/refresh-token', async (req, res) => {
 
   try {
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    const newToken = jwt.sign({ id: decoded.id }, JWT_SECRET, { expiresIn: '15m' });
+    const newToken = jwt.sign({ id: decoded.id }, JWT_SECRET, { expiresIn: '1m' });
     res.json({ token: newToken });
   } catch (error) {
     res.status(401).json({ error: 'Invalid or expired refresh token' });
