@@ -154,8 +154,8 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid password' });
     }
 
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '3m' });
-    const refreshToken = jwt.sign({ id: user._id }, JWT_REFRESH_SECRET, { expiresIn: '3m' });
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '15m' });
+    const refreshToken = jwt.sign({ id: user._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
 
     res.json({ token, refreshToken, username: user.username });
   } catch (error) {
@@ -174,7 +174,7 @@ app.post('/api/refresh-token', async (req, res) => {
 
   try {
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    const newToken = jwt.sign({ id: decoded.id }, JWT_SECRET, { expiresIn: '1m' });
+    const newToken = jwt.sign({ id: decoded.id }, JWT_SECRET, { expiresIn: '15m' });
     res.json({ token: newToken });
   } catch (error) {
     res.status(401).json({ error: 'Invalid or expired refresh token' });
@@ -208,23 +208,8 @@ app.post('/api/cars', verifyToken, checkSubscription, async (req, res) => {
   }
 });
 
-// Protected route to delete a single car
-app.delete('/api/cars/:id', verifyToken, checkSubscription, async (req, res) => {
-  await connectToDatabase();
-  try {
-    const car = await Car.findOneAndDelete({ _id: req.params.id, userId: req.userId });
-    if (!car) {
-      return res.status(404).json({ error: 'Car not found or you do not have permission to delete it' });
-    }
-    res.json({ message: 'Car deleted successfully', subscriptionStatus: req.subscriptionStatus });
-  } catch (error) {
-    console.error('Error deleting car:', error);
-    res.status(500).json({ error: 'Failed to delete car' });
-  }
-});
-
-// Protected route to delete multiple cars
-app.post('/api/cars/delete-multiple', verifyToken, checkSubscription, async (req, res) => {
+// Protected route to delete cars (single or multiple)
+app.delete('/api/cars/delete', verifyToken, checkSubscription, async (req, res) => {
   await connectToDatabase();
   const { carIds } = req.body;
 
@@ -244,7 +229,7 @@ app.post('/api/cars/delete-multiple', verifyToken, checkSubscription, async (req
 
     res.json({ message: `${result.deletedCount} car(s) deleted successfully`, subscriptionStatus: req.subscriptionStatus });
   } catch (error) {
-    console.error('Error deleting multiple cars:', error);
+    console.error('Error deleting cars:', error);
     res.status(500).json({ error: 'Failed to delete cars' });
   }
 });
